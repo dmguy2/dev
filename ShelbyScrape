@@ -1,0 +1,152 @@
+from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import Select
+from bs4 import BeautifulSoup
+import requests
+import csv
+import datetime
+from datetime import datetime
+from oauth2client.service_account import ServiceAccountCredentials
+import gspread
+import time
+
+
+# initialize the Chrome driver
+driver = webdriver.Chrome("chromedriver")
+driver.maximize_window()  # For maximizing window
+driver.implicitly_wait(30)  # gives an implicit wait for 20 seconds
+
+# Github credentials
+username = "david.guy"
+password = "EdIson3.20"
+
+# Scrape Limit
+scrape_limit = 101
+
+# head to shelby login page
+driver.get("https://groverva.shelbynextchms.com/user/login")
+# find username/email field and send the username itself to the input field
+driver.find_element("id", "login-username").send_keys(username)
+# find password input field and insert password as well
+driver.find_element("id", "login-password").send_keys(password)
+# click login button
+driver.find_element("id", "btn-login").click()
+
+# navigate to attendance page
+driver.get("https://groverva.shelbynextchms.com/reports/attendance/sessions")
+
+
+def show_hundred(driver):
+    wait = WebDriverWait(driver, 30)
+    wait.until(EC.presence_of_element_located((By.ID, "react-panel-view")))
+
+    # locate the "next" button using the provided xpath
+    select_element = driver.find_element(
+        "xpath", '//*[@id="react-panel-view"]/span/div[3]/span[1]/span/select')
+
+    # Create a new instance of the "Select" class and pass in the <select> element
+    select = Select(select_element)
+
+    # Select the option with a value of "500"
+    select.select_by_value("500")
+
+show_hundred(driver)
+
+
+def scrape_table(driver):
+    # Wait for the table to load
+    wait = WebDriverWait(driver, 30)
+    wait.until(EC.presence_of_element_located(
+        (By.XPATH, '//*[@id="react-panel-view"]/span/div[2]/table/tbody/tr[1]')))
+
+    # Scrape the HTML of the page
+    page_source = driver.page_source
+    soup = BeautifulSoup(page_source, "html.parser")
+
+    # Find all rows in the table
+    rows = soup.find_all("tr")
+
+    # Iterate through the first 100 rows
+    for i in range(1, scrape_limit):
+        xpath = f'//*[@id="react-panel-view"]/span/div[2]/table/tbody/tr[{i}]'
+        row = driver.find_element(By.XPATH, xpath)
+        cells = row.find_elements(By.XPATH, f"{xpath}/td")
+        print([cell.text for cell in cells])
+# scrape_table(driver)
+
+
+def export_table(driver):
+    # Wait for the table to load
+    wait = WebDriverWait(driver, 30)
+    wait.until(EC.presence_of_element_located(
+        (By.XPATH, '//*[@id="react-panel-view"]/span/div[2]/table/tbody/tr[1]')))
+
+    # Scrape the HTML of the page
+    page_source = driver.page_source
+    soup = BeautifulSoup(page_source, "html.parser")
+
+    # Find all rows in the table
+    rows = soup.find_all("tr")
+
+    # Create a new file with the current date
+    current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    filename = f"attendance_{current_date}.csv"
+    with open(filename, mode='w', newline='') as file:
+        writer = csv.writer(file)
+
+        # Write headers to the file
+        writer.writerow(
+            ["Session", "Date", "Present", "Reason", "No Reason", "Visitors", "% Accounted For"])
+
+        # Iterate through the first 500 rows
+        for i in range(1, scrape_limit):
+            xpath = f'//*[@id="react-panel-view"]/span/div[2]/table/tbody/tr[{i}]'
+            row = driver.find_element(By.XPATH, xpath)
+            cells = row.find_elements(By.XPATH, f"{xpath}/td")
+            writer.writerow([cell.text for cell in cells])
+# export_table(driver)
+
+
+def append_table(driver):
+    # Wait for the table to load
+    wait = WebDriverWait(driver, 30)
+    wait.until(EC.presence_of_element_located(
+        (By.XPATH, '//*[@id="react-panel-view"]/span/div[2]/table/tbody/tr[1]')))
+
+    # Scrape the HTML of the page
+    page_source = driver.page_source
+    soup = BeautifulSoup(page_source, "html.parser")
+
+    # Find all rows in the table
+    rows = soup.find_all("tr")
+
+    # Authorize access to Google Sheets
+    SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
+              'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.file']
+    creds = ServiceAccountCredentials.from_json_keyfile_name(
+        'credentials.json', SCOPES)
+    client = gspread.authorize(creds)
+
+    # Open the desired worksheet
+    worksheet = client.open("Grove Ops Weekly Snapshot").worksheet(
+        "Copy of Planning Center Scrape")
+
+    # Write headers to the worksheet
+    # headers = ["Session", "Date", "Present", "Reason",
+    #          "No Reason", "Visitors", "% Accounted For"]
+    # worksheet.append_row(headers)
+
+    # Iterate through the first number of defined rows
+    for i in range(1, scrape_limit):
+        time.sleep(1)
+        xpath = f'//*[@id="react-panel-view"]/span/div[2]/table/tbody/tr[{i}]'
+        row = driver.find_element(By.XPATH, xpath)
+        cells = row.find_elements(By.XPATH, f"{xpath}/td")
+        worksheet.append_row([cell.text for cell in cells])
+
+
+append_table(driver)
+
+driver.quit
